@@ -270,80 +270,17 @@ cmd_submit() {
 	# push to origin
 	hubflow_push_latest_changes_to_origin
 
-	# pull request details
-	PR_FILE="./COMMIT_MSG"
-	PR_TITLE=
-	PR_DESC=
+  REPO_URL=`git remote -v | grep -m1 '^origin' | sed -Ene's#.*(git@[^[:space:]]*).*#\1#p'`
+  USER=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\1#p'`
+  REPO=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\2#p'`
 
-	rm -f "$PR_FILE"
-
-	# ask the user for a pull request description
-	cat <<EOS > "$PR_FILE"
-
-# Please enter the description for your pull request. Lines starting
-# with '#' will be ignored, and an empty message aborts the request.
-#
-# The first line should be a short feature summary, no longer than
-# 72 characters.
-#
-# The subsequent lines should be a longer description of the feature,
-# including a summary of backwards-compatibility breaks, wrapped at
-# 80 characters.
-EOS
-	${VISUAL:-${EDITOR:-vi}} "$PR_FILE"
-
-	# extract pull request parameters from description
-	if [ -r "$PR_FILE" ]; then
-		PR_TITLE=$(head -n1 "$PR_FILE" | sed -e 's/^[[:space:]]+//' -e 's/"/\\"/g;' )
-		PR_DESC=$(tail -n+2 "$PR_FILE" | grep -v '^#' | sed -e 's/"/\\"/g;' | tr '\n' '\000' | sed -e 's/\x00/\\n/g;' )
-	fi
-
-	# ensure there's an adequate description
-	if [ -z "$PR_TITLE" ]; then
-		die "Aborting submission due to empty summary."
-	elif [ -z "$PR_DESC" ]; then
-		warn "You have left the description empty; the review may decide to reject your"
-		warn "pull request because of this."
-	fi
-
-	# submit pull request to GitHub and
-    resp=$(github_post \
-         "/repos/$GITHUB_ORIGIN/pulls" \
-         "{\"title\":\"$PR_TITLE\",\"body\":\"$PR_DESC\",\"head\":\"$FEATURE_BRANCH\",\"base\":\"$BASE\"}")
-
-	# did it succeed?
-	if echo "$resp" | grep "Validation Failed" > /dev/null ; then
-		# no, it did not
-		if echo "$resp" | grep "pull request already exists" > /dev/null ; then
-			die "A pull request already exists for this feature"
-		elif echo "$resp" | grep "No commits between" > /dev/null ; then
-			die "You need to make some commits for this feature before you can make a pull request"
-		else
-			warn "An unexpected error was returned from GitHub. Here is the raw response:"
-			warn
-			echo "$resp"
-			exit 1
-		fi
-	fi
-
-	# parse Pull Request URL from response
-        PR_URL=$(echo $resp |
-            awk -F"," '{for(i=1;i<=NF;i++){if($i~/html_url/){print $i"\n"}}}' |
-            grep 'pull' |
-            awk -F"\":" '{print $2}' |
-            awk -F"\"" '{print $2}')
-
-	if [ -z "$PR_URL" ]; then
-		die "Failed to create Pull Request"
-	else
-		# if it succeed, delete the pull request file
-		rm -f "$PR_FILE"
-	fi
-
+  open -a "${HUBFLOW_BROWSER:-Google Chrome}" "https://github.com/$USER/$REPO/compare/$BASE...$USER:$FEATURE_BRANCH?expand=1"
+  
 	echo
 	echo "Summary of actions:"
 	echo "- The branch '$FEATURE_BRANCH' was pushed to '$ORIGIN'"
-	echo "- A Pull Request from '$FEATURE_BRANCH' to '$BASE' was created at '$PR_URL'"
+	echo "- A Browser was opened to create a Pull Request from '$FEATURE_BRANCH' to '$BASE' was created at '$PR_URL'"
+	echo "- Fill out the Pull Request form on Github and submit it for peer approval."
 	echo ""
 	echo "Once the Pull Request has been accepted, cleanup the feature with:"
 	echo ""
