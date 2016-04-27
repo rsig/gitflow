@@ -274,6 +274,7 @@ cmd_submit() {
   USER=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\1#p'`
   REPO=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\2#p'`
 
+  sleep 2
   open -a "${HUBFLOW_BROWSER:-Google Chrome}" "https://github.com/$USER/$REPO/compare/$BASE...$USER:$FEATURE_BRANCH?expand=1"
   
 	echo
@@ -311,40 +312,6 @@ cmd_finish() {
 	if has "$ORIGIN/$FEATURE_BRANCH" $(git_remote_branches); then
 		require_branches_equal "$FEATURE_BRANCH" "$ORIGIN/$FEATURE_BRANCH"
 	fi
-	if has "$ORIGIN/$DEVELOP_BRANCH" $(git_remote_branches); then
-		require_branches_equal "$DEVELOP_BRANCH" "$ORIGIN/$DEVELOP_BRANCH"
-	fi
-
-	# make sure that the feature branch has been merged into develop
-	if noflag force_merge ; then
-		if [[ $(git rev-list -n2 "$DEVELOP_BRANCH..$FEATURE_BRANCH") ]] ; then
-			echo
-			echo "Feature branch has not yet been merged into $ORIGIN/$DEVELOP_BRANCH."
-			echo "Please raise a pull-request via GitHub first, or use the -f flag."
-			exit 1
-		fi
-	fi
-
-	# if the user wants to rebase, do that first
-	if flag rebase; then
-		if ! git hf feature rebase "$NAME" "$DEVELOP_BRANCH"; then
-			warn "Finish was aborted due to conflicts during rebase."
-			warn "Please finish the rebase manually now."
-			warn "When finished, re-run:"
-			warn "    git hf feature finish '$NAME' '$DEVELOP_BRANCH'"
-			exit 1
-		fi
-	fi
-
-	# merge into the develop branch
-	# the merge_helper will not return if there is a merge conflict
-	# we want to remain on the DEVELOP_BRANCH after the merge is complete
-	hubflow_local_merge_helper "$FEATURE_BRANCH" "$DEVELOP_BRANCH" no_checkout_afterwards
-
-	# make sure the merge worked
-	if [[ $(git rev-list -n2 "$DEVELOP_BRANCH..$FEATURE_BRANCH") ]] ; then
-		die "feature merge failed"
-	fi
 
 	# when no merge conflict is detected, just clean up the feature branch
 	# delete branch
@@ -354,30 +321,20 @@ cmd_finish() {
 
 	# switch to the develop branch
 	hubflow_change_branch "$DEVELOP_BRANCH"
+  git pull
 
 	# if we merged locally, push those changes up to origin
 	hubflow_push_latest_changes_to_origin
 
 	# delete the local branch if it is no longer needed
-	if noflag keep; then
-		if flag force_delete; then
-			git branch -D "$FEATURE_BRANCH"
-		else
-			git branch -d "$FEATURE_BRANCH"
-		fi
-	fi
+  git branch -D "$FEATURE_BRANCH"
 
 	echo
 	echo "Summary of actions:"
 	if flag fetch ; then
 		echo "- The latest changes from '$ORIGIN' were merged into '$MASTER_BRANCH' and '$DEVELOP_BRANCH'"
 	fi
-	echo "- The feature branch '$FEATURE_BRANCH' was merged into '$DEVELOP_BRANCH'"
-	if flag keep; then
-		echo "- Feature branch '$FEATURE_BRANCH' is still available"
-	else
-		echo "- Feature branch '$FEATURE_BRANCH' has been removed"
-	fi
+  echo "- Feature branch '$FEATURE_BRANCH' has been removed"
 	if flag fetch; then
 		echo "- Feature branch '$ORIGIN/$FEATURE_BRANCH' has been removed"
 	fi
