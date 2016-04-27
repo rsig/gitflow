@@ -213,7 +213,7 @@ cmd_finish() {
 	DEFINE_boolean sign false "sign the release tag cryptographically" s
 	DEFINE_string signingkey "" "use the given GPG-key for the digital signature (implies -s)" u
 	DEFINE_string message "" "use the given tag message" m
-	DEFINE_boolean automessage false "use the tag name as the message" M
+	DEFINE_boolean automessage true "use the tag name as the message" M
 	DEFINE_boolean push true "push to $ORIGIN after performing finish" p
 	DEFINE_boolean keep false "keep branch after performing finish" k
 	DEFINE_boolean notag false "don't tag this release" n
@@ -284,10 +284,7 @@ cmd_finish() {
 			flag sign && opts="$opts -s"
 			[ "$FLAGS_signingkey" != "" ] && opts="$opts -u '$FLAGS_signingkey'"
 
-			# use the tag as the message
-			if flag automessage ; then
-				FLAGS_message="Released $tagname"
-			fi
+      FLAGS_message="Released $tagname"
 
 			# add the tag message if there is one
 			[ "$FLAGS_message" != "" ] && opts="$opts -m '$FLAGS_message'"
@@ -295,6 +292,7 @@ cmd_finish() {
 			git checkout "$tag_branch" || die "Could not checkout $tag_branch."
 			eval git tag $opts "$tagname" || \
 			die "Tagging failed. Please run finish again to retry."
+
 		fi
 
 		# now merge from the tag into the additional_branch, if there
@@ -395,6 +393,25 @@ cmd_finish() {
 		fi
 	fi
 	echo
+
+  echo "A browser window was opened for drafting a release."
+  echo "Please add change log to the description of the release."
+  echo
+  echo "--------------------------------------------------------"
+  echo "|                    RELEASE NOTES                      |"
+  echo "--------------------------------------------------------"
+  echo
+  git --no-pager log --no-merges --pretty='* %s' $tagname~1..$tagname
+  git --no-pager log --no-merges --pretty='* %s' $tagname~1..$tagname | pbcopy
+  echo
+  echo "--------------------------------------------------------"
+
+  REPO_URL=`git remote -v | grep -m1 '^origin' | sed -Ene's#.*(git@[^[:space:]]*).*#\1#p'`
+  USER=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\1#p'`
+  REPO=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\2#p'`
+
+  sleep 2
+  open -a "${HUBFLOW_BROWSER:-Google Chrome}" "https://github.com/$USER/$REPO/releases/new?tag=$tagname"
 }
 
 cmd_cancel() {
