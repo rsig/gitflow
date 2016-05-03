@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function feature() {
+  git hf feature $@
+}
+
+function hotfix() {
+  git hf hotfix $@
+}
+
+function release() {
+  git hf release $@
+}

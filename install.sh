@@ -54,13 +54,14 @@ fi
 REPO_DIR="$(dirname $0)"
 EXEC_FILES="git-hf"
 SCRIPT_FILES="git-hf-init git-hf-feature git-hf-hotfix git-hf-push git-hf-pull git-hf-release git-hf-support git-hf-update git-hf-upgrade git-hf-version hubflow-common hubflow-shFlags"
+SHELL_EXTENSION="hubflow-shortcuts"
 SUBMODULE_FILE="hubflow-shFlags"
 
 case "$1" in
     uninstall)
         echo "Uninstalling hubflow from $INSTALL_INTO"
         if [ -d "$INSTALL_INTO" ] ; then
-            for script_file in $SCRIPT_FILES $EXEC_FILES ; do
+            for script_file in $SCRIPT_FILES $EXEC_FILES $SHELL_EXTENSION ; do
                 echo "rm -vf $INSTALL_INTO/$script_file"
                 rm -vf "$INSTALL_INTO/$script_file"
             done
@@ -105,6 +106,14 @@ case "$1" in
         for script_file in $SCRIPT_FILES ; do
             install -v -m 0644 "$REPO_DIR/$script_file" "$INSTALL_INTO"
         done
+        for extension in $SHELL_EXTENSION ; do
+          install -v -m 0755 "$REPO_DIR/extensions/$extension" "$INSTALL_INTO"
+        done
+        echo
+        echo "################################################################################"
+        echo "Please add the following to your .bashrc or .zshrc file"
+        echo "source $INSTALL_INTO/$SHELL_EXTENSION"
+        echo "################################################################################"
         exit
         ;;
 esac
