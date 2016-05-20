@@ -50,7 +50,6 @@ usage() {
 	echo "usage: git hf feature [list] [-v]"
 	echo "       git hf feature start <name> [<base>]"
 	echo "       git hf feature submit [<name>] [<base>]"
-	echo "       git hf feature finish [-rFkD] [<name|nameprefix>]"
 	echo "       git hf feature diff [<name|nameprefix>]"
 	echo "       git hf feature rebase [-i] [<name|nameprefix>]"
 	echo "       git hf feature checkout <name> [-f]"
@@ -250,7 +249,7 @@ cmd_start() {
 	echo "Now, start committing on your feature. When done, create a"
 	echo "pull request on GitHub.  Once that has been merged, use:"
 	echo ""
-	echo "     git hf feature finish"
+	echo "     git hf feature submit"
 	echo
 	echo "to delete the branch both locally and remotely."
 }
@@ -285,60 +284,10 @@ cmd_submit() {
 	echo ""
 	echo "Once the Pull Request has been accepted, cleanup the feature with:"
 	echo ""
-	echo "     git hf feature finish $NAME"
+	echo "  git checkout develop"
+	echo "  git pull"
+	echo "  git branch -d $NAME"
 	echo
-}
-
-cmd_finish() {
-	DEFINE_boolean fetch true "fetch from $ORIGIN before performing finish" F
-	DEFINE_boolean rebase false "rebase instead of merge" r
-	DEFINE_boolean keep false "keep branch after performing finish" k
-	DEFINE_boolean force_delete false "force delete feature branch after finish" D
-	DEFINE_boolean force_merge false "force merge of feature branch if not merged yet at origin" f
-	parse_args "$@"
-	expand_nameprefix_arg_or_current
-
-	# sanity checks
-	require_branch "$FEATURE_BRANCH"
-	require_clean_working_tree
-	require_remote_available
-
-	# update local repo with remote changes first, if asked
-	if flag fetch; then
-		# fetch and merge the latest changes from origin
-		hubflow_merge_latest_changes_from_origin
-	fi
-
-	if has "$ORIGIN/$FEATURE_BRANCH" $(git_remote_branches); then
-		require_branches_equal "$FEATURE_BRANCH" "$ORIGIN/$FEATURE_BRANCH"
-	fi
-
-	# when no merge conflict is detected, just clean up the feature branch
-	# delete branch
-	if flag fetch; then
-		git push "$ORIGIN" ":refs/heads/$FEATURE_BRANCH"
-	fi
-
-	# switch to the develop branch
-	hubflow_change_branch "$DEVELOP_BRANCH"
-  git pull
-
-	# if we merged locally, push those changes up to origin
-	hubflow_push_latest_changes_to_origin
-
-	# delete the local branch if it is no longer needed
-  git branch -D "$FEATURE_BRANCH"
-
-	echo
-	echo "Summary of actions:"
-	if flag fetch ; then
-		echo "- The latest changes from '$ORIGIN' were merged into '$MASTER_BRANCH' and '$DEVELOP_BRANCH'"
-	fi
-  echo "- Feature branch '$FEATURE_BRANCH' has been removed"
-	if flag fetch; then
-		echo "- Feature branch '$ORIGIN/$FEATURE_BRANCH' has been removed"
-	fi
-	echo "- You are now on branch '$DEVELOP_BRANCH'"
 }
 
 cmd_diff() {
