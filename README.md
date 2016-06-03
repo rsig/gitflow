@@ -1,31 +1,133 @@
 HubFlow
 =======
 
-Adds the 'git hf' Git extension to provide high-level repository operations
-for [DataSift's HubFlow branching model](http://datasift.github.com/gitflow/), which is based on [Vincent Driessen’s original blog post](http://nvie.com/posts/a-successful-git-branching-model/).
+#### Installing & Updating
 
-![](http://nvie.com/img/2009/12/Screen-shot-2009-12-24-at-11.32.03.png)
+```sh
+$ git clone git@github.com:rsig/gitflow.git
+$ cd gitflow
+$ sudo ./install.sh
+```
 
-Installation
-------------
+In each of the git project directories (EG: RS and Ember-RS) you will need to
+run. If you delete your repository and reclone you will have to do this every
+time.
 
-1. `git clone git@github.com:datasift/gitflow.git`
-2. `cd gitflow`
-3. `sudo ./install.sh`
+```sh
+$ cd /Volumes/Source/rs
+$ git hf init
 
-Windows users will need something like Cygwin in order to use this extension.
+$ cd /Volumes/Source/ember-rs
+$ git hf init
+```
 
-Upgrading To The Latest Version
--------------------------------
+#### Features
 
-Upgrading to the latest version of the HubFlow tools is very easy:
+Features are meant for bugfixes, features, and enhancements
 
-1. `sudo git hf upgrade`
+```sh
+$ feature start my-feature
+```
 
-Getting Started
----------------
+This will start a new feature branch `feature/my-feature`. From here on out you
+can use git as you would normally. Create commits and push to the remote. Once
+you're happy with your work and wish to submit a pull request you can do the
+following:
 
-See our tutorial website to learn more about the [GitFlow](http://datasift.github.com/gitflow/IntroducingGitFlow.html) branching model and [how to use the HubFlow tools](http://datasift.github.com/gitflow/GitFlowForGitHub.html).
+```sh
+$ feature submit my-feature
+```
+
+This will submit a pull request opening up a chrome browser with the pull
+request page pre-filled for this bit of work. The pull request should be opened
+up against the `develop` long lived branch.  *note* this currently only works
+on OSX.
+
+* Mark the pull request with the correct tag: *pending reviewal* or *wip*
+  (work in progress)
+* Mark the pull request with the correct milestone (for the next release)
+* Assign the pull request to a relevant developer
+* Submit the pull request
+* Wait for approval from the reviewer
+* Once approved merge the pull request on github and make sure to choose the
+  *Squash Commit* option after clicking merge.
+* Delete the feature branch on github after merging
+
+Now that you've completed a bit of work you can clean up your local machine
+
+```sh
+$ git checkout develop
+$ git pull
+```
+
+Make sure your changes have made it into `develop` with:
+
+```sh
+$ git log
+```
+
+You now can delete your local branch since you're done with it.
+Make sure you're on the `develop` branch and do the following
+
+```sh
+$ git branch -d feature/my-feature
+```
+
+#### Releases
+
+Releases are done one to two times a week. A release contains pending features
+that have been merged into the `develop` branch.  As a release captain you are
+tasked of starting, validating,
+finishing and publishing a release.
+
+We release every Tuesday and Thursday. If for some reason we find a regression
+during Tuesdays validation process it is okay for the release captain to take
+Wednesday to rally the team and get a fix out, revalidate and release on
+Thursday. That being said, if the offending pull request can be reverted prefer
+that over delaying the release.
+
+* In preperation for a release a milestone in github should be created with the
+  release name.
+* Ensure all pull requests that you wish to release have been added to the
+  current milestone
+
+```sh
+$ git checkout develop
+$ git pull
+$ release start my-release
+```
+
+This will create the release feature branch `release/my-release`. From here
+you'll deploy the release branch on staging for the verification process.
+
+Once deployed let other team members know that the release is out on staging and
+ask for help for verification. Each person should mark all pull requests for
+this release as `verified` or `failed-verification`. During this time automated
+tests should be run as well.
+
+*remember* If a pull request has `failed-verification`, that is the time to
+decide if the release should be delayed or not.
+
+##### A production ready release
+* Must have all pull requests verified
+* Must not contain regressions
+* Must pass all automated tests (unless they were written to validate a future
+  bugfix)
+
+After the release is ready for production do the following
+
+* Close the milestone on github
+* Finish the release
+```sh
+$ git checkout release/my-release
+$ git pull
+$ release finish my-release
+```
+
+This will merge the release into `master`, `develop` and create a tag with the
+prefix `rss-` so the tag will be something like `rss-my-release`.
+
+The final step is deploying the release to production. You made it!
 
 Changelog
 ---------
