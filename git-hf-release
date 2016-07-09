@@ -217,6 +217,28 @@ cmd_finish() {
 	require_branch "$RELEASE_BRANCH"
 	require_clean_working_tree
 	require_remote_available
+  hubflow_fetch_latest_changes_from_origin
+
+  echo "Checking for changes on the remote.."
+  local found_updates=`git --no-pager diff $RELEASE_BRANCH..origin/$RELEASE_BRANCH`
+
+  if [ "$found_updates" ]; then
+    printf "\nChanges found\n"
+    printf "################################################################################\n"
+    git --no-pager diff $RELEASE_BRANCH..origin/$RELEASE_BRANCH
+    printf "################################################################################\n"
+    printf "release branch '$RELEASE_BRANCH' has been modified. Update your local branch (answering no will force push and overwrite changes on the remote) (y/N)? "
+    local should_update
+    read should_update
+    # Normalize the string so people don't have to guess upper or lower case
+    should_update=$(echo $should_update | tr '[:upper:]' '[:lower:]')
+    if [ $should_update == "y" ] || [ $should_update == "yes" ]; then
+      git pull origin $RELEASE_BRANCH
+    else
+      git push -f origin $RELEASE_BRANCH
+    fi
+  fi
+
   hubflow_push_latest_changes_to_origin
   hubflow_merge_latest_changes_from_origin
 
