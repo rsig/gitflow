@@ -147,16 +147,7 @@ require_newversion_arg() {
 	fi
 }
 
-require_no_existing_release_branches() {
-	local release_branches=$(echo "$(git_local_branches)" | grep "^$RELEASE_PREFIX")
-	local first_branch=$(echo ${release_branches} | head -n1)
-	first_branch=${first_branch#$RELEASE_PREFIX}
-	[ -z "$release_branches" ] || \
-		die "There is an existing release branch ($first_branch). Finish that one first."
-}
-
 cmd_start() {
-	DEFINE_boolean fetch true "fetch from $ORIGIN before creating the new branch" F
 	parse_args "$@"
 	if hubflow_is_support_branch ; then
 		BASE=$CURRENT_BRANCH
@@ -167,21 +158,19 @@ cmd_start() {
 	require_version_arg
 
 	# sanity checks
-	require_clean_working_tree
 	require_remote_available
-	if flag fetch ; then
-		hubflow_fetch_latest_changes_from_origin
-	fi
-	require_base_is_on_develop_or_support
-	require_no_existing_release_branches
 
-	# sanity checks
-	require_clean_working_tree
+  # make sure we've never created this release before
 	require_branch_absent "$RELEASE_BRANCH"
 	require_tag_absent "$RELEASE_PREFIX$VERSION"
 	if has "$ORIGIN/$BASE" $(git_remote_branches); then
 		require_branches_equal "$BASE" "$ORIGIN/$BASE"
 	fi
+
+	require_clean_working_tree
+  hubflow_fetch_latest_changes_from_origin
+	require_base_is_on_develop
+  git reset --hard origin/develop
 
 	# create branch
 	git checkout -b "$RELEASE_BRANCH" "$BASE" || die "Unable to create branch '$RELEASE_BRANCH'"
@@ -224,39 +213,41 @@ cmd_finish() {
 	# the release branch at the current time
 	RELEASE_BRANCH="$RELEASE_PREFIX$VERSION"
 
-	# handle flags that imply other flags
-	if [ "$FLAGS_signingkey" != "" ]; then
-		FLAGS_sign=$FLAGS_TRUE
-	fi
-
 	# sanity checks
 	require_branch "$RELEASE_BRANCH"
 	require_clean_working_tree
 	require_remote_available
+  hubflow_fetch_latest_changes_from_origin
 
+  echo "Checking for changes on the remote.."
+  local found_updates=`git --no-pager diff $RELEASE_BRANCH..origin/$RELEASE_BRANCH`
+
+  if [ "$found_updates" ]; then
+    printf "\nChanges found\n"
+    printf "################################################################################\n"
+    git --no-pager diff $RELEASE_BRANCH..origin/$RELEASE_BRANCH
+    printf "################################################################################\n"
+    printf "release branch '$RELEASE_BRANCH' has been modified. Update your local branch (answering no will force push and overwrite changes on the remote) (y/N)? "
+    local should_update
+    read should_update
+    # Normalize the string so people don't have to guess upper or lower case
+    should_update=$(echo $should_update | tr '[:upper:]' '[:lower:]')
+    if [ $should_update == "y" ] || [ $should_update == "yes" ]; then
+      git pull origin $RELEASE_BRANCH
+    else
+      git push -f origin $RELEASE_BRANCH
+    fi
+  fi
+
+  hubflow_push_latest_changes_to_origin
   hubflow_merge_latest_changes_from_origin
-
-	# push up to origin
-	if flag push ; then
-		hubflow_push_latest_changes_to_origin
-	fi
 
 	# where are we merging into?
 	BASE=$(git_config_get_branch $RELEASE_BRANCH hubflowBase)
-	if [[ $BASE == $DEVELOP_BRANCH ]] ; then
-		# this is a release made from develop
-		#
-		# we must merge it into MASTER and DEVELOP
-		tag_branch="$MASTER_BRANCH"
-		additional_branch="$DEVELOP_BRANCH"
-		final_branch="$DEVELOP_BRANCH"
-	else
-		# this is a release made from a support branch
-		#
-		# we must merge it back into the support branch
-		tag_branch="$BASE"
-		final_branch="$BASE"
-	fi
+  tag_branch="$MASTER_BRANCH"
+  additional_branch="$DEVELOP_BRANCH"
+  final_branch="$DEVELOP_BRANCH"
+  tagname="$VERSION_PREFIX$VERSION"
 
 	# we need to be up to date before we go any further
 	for merge_branch in $tag_branch $additional_branch ; do
@@ -270,59 +261,26 @@ cmd_finish() {
 	# but the merge into master was successful, we skip it now
 	hubflow_local_merge_helper "$RELEASE_BRANCH" "$tag_branch" no_checkout_afterwards no_ff
 
-	if noflag notag; then
-		# try to tag the release
-		local tagname="$VERSION_PREFIX$VERSION"
-		if ! git_tag_exists "$tagname"; then
-			local opts="-a"
+  if ! git_tag_exists "$tagname"; then
+    echo "Creating tag $tagname"
+    git checkout "$tag_branch" || die "Could not checkout $tag_branch."
+    eval git tag -a "$tagname" -m "\"Released $VERSION\"" || \
+    die "Tagging failed. Please run finish again to retry."
+  else
+    die "The release tag '$tagname' already exists. Delete it and retry again."
+  fi
 
-			flag sign && opts="$opts -s"
-			[ "$FLAGS_signingkey" != "" ] && opts="$opts -u '$FLAGS_signingkey'"
-
-      FLAGS_message="Released $tagname"
-
-			# add the tag message if there is one
-			[ "$FLAGS_message" != "" ] && opts="$opts -m '$FLAGS_message'"
-
-			git checkout "$tag_branch" || die "Could not checkout $tag_branch."
-			eval git tag $opts "$tagname" || \
-			die "Tagging failed. Please run finish again to retry."
-
-		fi
-
-		# now merge from the tag into the additional_branch, if there
-		# is one
-		if [[ -n $additional_branch ]] ; then
-			if noflag nobackmerge ; then
-				# merge from the tag down into the DEVELOP branch
-				#
-				# this makes the master branch and the new tag a parent
-				# of the develop branch, which in turn lets you use
-				# 'git describe' on either branch
-				#
-				# we use 'no_ff' because we want a commit for the merge
-				# to appear in the git history
-				hubflow_local_merge_helper "$tagname" "$additional_branch" no_ff no_checkout_afterwards
-			else
-				# just merge the release branch into the DEVELOP branch
-				#
-				# this means that MASTER and DEVELOP continue to diverge
-				# for the moment
-				#
-				# we use 'no_ff' because we want a commit for the merge
-				# to appear in the git history
-				hubflow_local_merge_helper "$RELEASE_BRANCH" "$additional_branch" no_ff no_checkout_afterwards
-			fi
-		fi
-	else
-		# there's no tag, so just merge into any additional branch
-		#
-		# we use 'no_ff' because we want a commit for the merge to appear
-		# in the git history
-		if [[ -n $additional_branch ]] ; then
-			hubflow_local_merge_helper "$RELEASE_BRANCH" "$additional_branch" no_ff no_checkout_afterwards
-		fi
-	fi
+  # now merge from the tag into the additional_branch, if there
+  # is one
+  # merge from the tag down into the DEVELOP branch
+  #
+  # this makes the master branch and the new tag a parent
+  # of the develop branch, which in turn lets you use
+  # 'git describe' on either branch
+  #
+  # we use 'no_ff' because we want a commit for the merge
+  # to appear in the git history
+  hubflow_local_merge_helper "$tagname" "$additional_branch" no_ff no_checkout_afterwards
 
 	# switch to our final branch
 	hubflow_change_branch "$final_branch"
@@ -335,58 +293,35 @@ cmd_finish() {
 	done
 
 	# delete branch
-	if noflag keep; then
-		if [ "$RELEASE_BRANCH" = "$(git_current_branch)" ]; then
-			hubflow_change_branch "$MASTER_BRANCH"
-		fi
-		git branch -d "$RELEASE_BRANCH"
-	fi
+  if [ "$RELEASE_BRANCH" = "$(git_current_branch)" ]; then
+    hubflow_change_branch "$MASTER_BRANCH"
+  fi
+  git branch -D "$RELEASE_BRANCH"
 
-	if flag push; then
-		# push the changed branches
-		for merge_branch in $tag_branch $additional_branch ; do
-			git push "$ORIGIN" "$merge_branch" || \
-			die "Could not push $merge_branch to $ORIGIN."
-		done
+  for merge_branch in $tag_branch $additional_branch ; do
+    git push "$ORIGIN" "$merge_branch" || \
+    die "Could not push $merge_branch to $ORIGIN."
+  done
 
-		# push any new tags
-		if noflag notag; then
-			git push --tags "$ORIGIN" || \
-			  die "Could not push tags to $ORIGIN."
-		fi
+  # push any new tags
+  git push --tags "$ORIGIN" || \
+    die "Could not push tags to $ORIGIN."
 
-		# delete the release branch
-		if noflag keep ; then
-			git push "$ORIGIN" :"$RELEASE_BRANCH" || \
-				die "Could not delete the remote $RELEASE_BRANCH in $ORIGIN."
-		fi
-	fi
+  # delete the release branch
+  git push "$ORIGIN" :"$RELEASE_BRANCH" || \
+    die "Could not delete the remote $RELEASE_BRANCH in $ORIGIN."
 
 	echo
 	echo "Summary of actions:"
-	if flag push ; then
-		echo "- Latest objects have been fetched from '$ORIGIN'"
-	fi
+  echo "- Latest objects have been fetched from '$ORIGIN'"
 	echo "- Branch '$RELEASE_BRANCH' has been merged into $tag_branch"
-	if noflag notag; then
-		echo "- The release was tagged '$tagname'"
-		if [[ -n $additional_branch ]] ; then
-			echo "- The tag '$tagname' was merged into $additional_branch"
-		fi
-	elif [[ -n $additional_branch ]] ; then
-		echo "- Branch '$RELEASE_BRANCH' has been merged into $additional_branch"
-	fi
-	if flag keep; then
-		echo "- Branch '$RELEASE_BRANCH' is still available"
-	else
-		echo "- Branch '$RELEASE_BRANCH' has been deleted"
-	fi
-	if flag push; then
-		echo "- Changed branches and tags have been pushed to '$ORIGIN'"
-		if noflag keep ; then
-			echo "- Branch '$RELEASE_BRANCH' in '$ORIGIN' has been deleted."
-		fi
-	fi
+  echo "- The release was tagged '$tagname'"
+  if [[ -n $additional_branch ]] ; then
+    echo "- The tag '$tagname' was merged into $additional_branch"
+  fi
+  echo "- Branch '$RELEASE_BRANCH' has been deleted"
+  echo "- Changed branches and tags have been pushed to '$ORIGIN'"
+  echo "- Branch '$RELEASE_BRANCH' in '$ORIGIN' has been deleted."
 	echo
 
   echo "A browser window was opened for drafting a release."
@@ -396,8 +331,10 @@ cmd_finish() {
   echo "|                    RELEASE NOTES                      |"
   echo "--------------------------------------------------------"
   echo
-  git --no-pager log --no-merges --pretty='* %s' $tagname~1..$tagname
-  git --no-pager log --no-merges --pretty='* %s' $tagname~1..$tagname | pbcopy
+  last_tag_ref=`git rev-list --tags --skip=1 --max-count=1`
+  last_release_tag=`git describe --abbrev=0 --tags $last_tag_ref`
+  git --no-pager log --oneline $last_release_tag..$tagname
+  git --no-pager log --oneline $last_release_tag..$tagname | pbcopy
   echo
   echo "--------------------------------------------------------"
 
@@ -405,7 +342,7 @@ cmd_finish() {
   USER=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\1#p'`
   REPO=`echo $REPO_URL | sed -Ene's#git@github.com:([^/]*)/(.*).git#\2#p'`
 
-  sleep 2
+  sleep 4
   open -a "${HUBFLOW_BROWSER:-Google Chrome}" "https://github.com/$USER/$REPO/releases/new?tag=$tagname"
 }
 
