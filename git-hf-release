@@ -129,6 +129,7 @@ parse_args() {
 	# read arguments into global variables
 	VERSION=$1
 	RELEASE_BRANCH=$RELEASE_PREFIX$VERSION
+	RELEASE_FILE="$(git rev-parse --show-toplevel)/.current-release"
 }
 
 require_version_arg() {
@@ -156,14 +157,15 @@ cmd_start() {
 	fi
 	BASE=${3:-$BASE}
 	require_version_arg
+	local release_tag="$RELEASE_PREFIX$VERSION"
 
 	# sanity checks
 	require_remote_available
 
   # make sure we've never created this release before
 	require_branch_absent "$RELEASE_BRANCH"
-	require_tag_absent "$RELEASE_PREFIX$VERSION"
-	if has "$ORIGIN/$BASE" $(git_remote_branches); then
+	require_tag_absent $release_tag
+	if has "$ORIGIN/$BASE" "$(git_remote_branches)"; then
 		require_branches_equal "$BASE" "$ORIGIN/$BASE"
 	fi
 
@@ -227,7 +229,7 @@ cmd_finish() {
     printf "################################################################################\n"
     git --no-pager diff $RELEASE_BRANCH..origin/$RELEASE_BRANCH
     printf "################################################################################\n"
-    printf "release branch '$RELEASE_BRANCH' has been modified. Update your local branch (answering no will force push and overwrite changes on the remote) (y/N)? "
+    printf "release branch '%s' has been modified. Update your local branch (answering no will force push and overwrite changes on the remote) (y/N)? " "$RELEASE_BRANCH"
     local should_update
     read should_update
     # Normalize the string so people don't have to guess upper or lower case
@@ -239,6 +241,26 @@ cmd_finish() {
     fi
   fi
 
+	local previous_tag
+	if [ -f $RELEASE_FILE ]; then
+		previous_tag="$(cat $RELEASE_FILE)"
+	else
+		last_tag_ref=`git rev-list --tags --skip=1 --max-count=1`
+	  previous_tag=`git describe --abbrev=0 --tags $last_tag_ref`
+		echo "Falling back to a guessed previous tag ($previous_tag), release notes may be incorrect this release."
+	fi
+
+	tagname="$VERSION_PREFIX$VERSION"
+	# update the release file
+	if [[ $tagname && $RELEASE_FILE ]]; then
+		echo "Updating $RELEASE_FILE to $release_tag"
+		echo $tagname > $RELEASE_FILE
+		git add $RELEASE_FILE
+		git commit -m "Updates .current-release to $tagname"
+	else
+		die "Could not determine the release tag.. Are you sure hubflow was setup properly?"
+	fi
+
   hubflow_push_latest_changes_to_origin
   hubflow_merge_latest_changes_from_origin
 
@@ -247,11 +269,11 @@ cmd_finish() {
   tag_branch="$MASTER_BRANCH"
   additional_branch="$DEVELOP_BRANCH"
   final_branch="$DEVELOP_BRANCH"
-  tagname="$VERSION_PREFIX$VERSION"
+
 
 	# we need to be up to date before we go any further
 	for merge_branch in $tag_branch $additional_branch ; do
-		if has "$ORIGIN/$merge_branch" $(git_remote_branches); then
+		if has "$ORIGIN/$merge_branch" "$(git_remote_branches)"; then
 			require_branches_equal "$merge_branch" "$ORIGIN/$merge_branch"
 		fi
 	done
@@ -322,6 +344,8 @@ cmd_finish() {
   echo "- Branch '$RELEASE_BRANCH' has been deleted"
   echo "- Changed branches and tags have been pushed to '$ORIGIN'"
   echo "- Branch '$RELEASE_BRANCH' in '$ORIGIN' has been deleted."
+	echo "- The file '.current-release' has been updated to '$release_tag'"
+
 	echo
 
   echo "A browser window was opened for drafting a release."
@@ -331,10 +355,8 @@ cmd_finish() {
   echo "|                    RELEASE NOTES                      |"
   echo "--------------------------------------------------------"
   echo
-  last_tag_ref=`git rev-list --tags --skip=1 --max-count=1`
-  last_release_tag=`git describe --abbrev=0 --tags $last_tag_ref`
-  git --no-pager log --oneline $last_release_tag..$tagname
-  git --no-pager log --oneline $last_release_tag..$tagname | pbcopy
+	git --no-pager log --no-merges --pretty='* %s' $previous_tag..$tagname
+  git --no-pager log --no-merges --pretty='* %s' $previous_tag..$tagname | pbcopy
   echo
   echo "--------------------------------------------------------"
 
