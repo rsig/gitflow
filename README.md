@@ -9,6 +9,11 @@ $ cd gitflow
 $ sudo ./install.sh
 ```
 
+Add the following line to the ~/.bash_profile file
+```sh
+source /usr/local/bin/hubflow-shortcuts
+```
+
 In each of the git project directories (EG: RS and Ember-RS) you will need to
 run. If you delete your repository and reclone you will have to do this every
 time.
@@ -20,6 +25,7 @@ $ git hf init
 $ cd /Volumes/Source/ember-rs
 $ git hf init
 ```
+*Note* Once the initialization is done, create a new shell for the settings to take effect.
 
 #### Features
 
