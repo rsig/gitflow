@@ -130,8 +130,10 @@ $ git pull
 $ release finish my-release
 ```
 
-This will merge the release into `master`, `develop` and create a tag with the
-prefix `rss-` so the tag will be something like `rss-my-release`.
+This merges the release into `master` and `develop`. It also opens a browser
+window prompting you to create a release tag on github. Paste the release notes
+from your console into the release description in your browser (this makes it
+easier for people to see what was changed from release to release).
 
 The final step is deploying the release to production. You made it!
 
